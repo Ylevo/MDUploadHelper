@@ -142,7 +142,7 @@ async Task FindMangosId()
     foreach (var mangoName in mangosFolders)
     {
         y++;
-        results = await api.Manga.List(new MangaFilter { Title = mangoName });
+        results = await api.Manga.List(new MangaFilter { Title = mangoName, ContentRating = new ContentRating[] { ContentRating.safe, ContentRating.suggestive, ContentRating.erotica, ContentRating.pornographic } });
         switch (results.Total)
         {
             case int x when x == 0:
@@ -172,9 +172,13 @@ async Task FindMangosId()
                         id = results.Data[int.Parse(selection) - 1].Id;
                         titleLog = results.Data[int.Parse(selection) - 1].Attributes.Title.First().Value;
                         break;
+                    case string s when s != string.Empty:
+                        id = s;
+                        titleLog = s + " (manual input)";
+                        break;
                     default:
-                        titleLog = "None picked";
                         id = "None picked";
+                        titleLog = "None picked";
                         break;
                 }
                 break;
