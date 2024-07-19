@@ -33,24 +33,21 @@ try
         Console.WriteLine();
         Console.WriteLine("Menu :");
         Console.WriteLine();
-        Console.WriteLine("0 - Load files");
         Console.WriteLine("1 - Get groups names");
         Console.WriteLine("2 - Find mangos ids");
-        Console.WriteLine("3 - Compare mango titles");
-        Console.WriteLine("4 - Find volume numbers");
-        Console.WriteLine("5 - Check for already uploaded chapters");
-        Console.WriteLine("6 - Log chapters");
-        Console.WriteLine("7 - Move folders to uploader");
-        Console.WriteLine("8 - Move folders BACK from uploader");
-        Console.WriteLine("9 - Exit");
+        Console.WriteLine("3 - Look for ids in name_id_map.json");
+        Console.WriteLine("4 - Compare mango titles");
+        Console.WriteLine("5 - Find volume numbers");
+        Console.WriteLine("6 - Check for already uploaded chapters");
+        Console.WriteLine("7 - Log chapters");
+        Console.WriteLine("8 - Move folders to uploader");
+        Console.WriteLine("9 - Move folders BACK from uploader");
+        Console.WriteLine("10 - Exit");
 
         string input = Console.ReadLine();
 
         switch(input)
         {
-            case "0":
-                LoadFiles();
-                break;
             case "1":
                 GetGroupsNames();
                 break;
@@ -58,24 +55,27 @@ try
                 await FindMangosId();
                 break;
             case "3":
-                await CompareTitles();
+                CombineJsons();
                 break;
             case "4":
-                await FindVolumeNumbers();
+                await CompareTitles();
                 break;
             case "5":
-                await CheckForAlreadyUploadedChapters();
+                await FindVolumeNumbers();
                 break;
             case "6":
-                LogChapters();
+                await CheckForAlreadyUploadedChapters();
                 break;
             case "7":
-                MoveToUploader();
+                LogChapters();
                 break;
             case "8":
-                MoveBackFromUploader();
+                MoveToUploader();
                 break;
             case "9":
+                MoveBackFromUploader();
+                break;
+            case "10":
                 return;
         }
     }
@@ -89,22 +89,24 @@ Console.ReadLine();
 
 void LoadFiles()
 {
-    string temp;
     if (File.Exists(Path.Combine(mainFolder, "mangosId.json")))
     {
-        temp = new StreamReader(Path.Combine(mainFolder, "mangosId.json")).ReadToEnd();
-        mangos = JsonSerializer.Deserialize<Dictionary<string, string>>(temp);
+        using StreamReader temp = new StreamReader(Path.Combine(mainFolder, "mangosId.json"));
+        mangos = JsonSerializer.Deserialize<Dictionary<string, string>>(temp.ReadToEnd());
     }
     if (File.Exists(Path.Combine(mainFolder, "groupsId.json")))
     {
-        temp = new StreamReader(Path.Combine(mainFolder, "groupsId.json")).ReadToEnd();
-        groups = JsonSerializer.Deserialize<Dictionary<string, string>>(temp);
+        using StreamReader temp = new StreamReader(Path.Combine(mainFolder, "groupsId.json"));
+        groups = JsonSerializer.Deserialize<Dictionary<string, string>>(temp.ReadToEnd());
     }
+
     mangosFolders = Directory.GetDirectories(mainFolder).Select(d => new DirectoryInfo(d).Name).ToList();
 }
 
 void GetGroupsNames()
 {
+    LoadFiles();
+
     if (mangosFolders == null) { Console.WriteLine("No mangos ID, ending."); return; }
 
     Dictionary<string, string> groupsDic = new();
@@ -134,9 +136,9 @@ void GetGroupsNames()
 
 async Task FindMangosId()
 {
-    if (mangosFolders == null) { Console.WriteLine("No mangos folders, ending."); return; }
+    LoadFiles();
 
-    string titleLog = "", id = "", log = "", selection = "";
+    string titleLog = "", id = "", log = "", selection = "", titles = "";
     Dictionary<string, string> dic = new();
     int y = 0;
     foreach (var mangoName in mangosFolders)
@@ -158,7 +160,11 @@ async Task FindMangosId()
 
                 for (int i = 0; i < results.Data.Count && i < 5; i++)
                 {
-                    Console.WriteLine("Result " + (i + 1) + " : " + results.Data[i].Attributes.Title.First().Value);
+                    var altTitles = results.Data[i].Attributes.AltTitles;
+                    titles = results.Data[i].Attributes.Title.First().Value + 
+                            (altTitles.Any(alt => alt.ContainsKey("es")) ? "\n" + new string(' ', 11) + altTitles.First(alt => alt.ContainsKey("es")).First().Value + " (ES)" : "") +
+                            (altTitles.Any(alt => alt.ContainsKey("es-la")) ? "\n" + new string(' ', 11) + altTitles.First(alt => alt.ContainsKey("es-la")).First().Value + " (ES-LA)" : "");
+                    Console.WriteLine("Result " + (i + 1) + " : " + titles);
                 }
 
                 selection = Console.ReadLine();
@@ -195,6 +201,8 @@ async Task FindMangosId()
 
 async Task FindVolumeNumbers()
 {
+    LoadFiles();
+
     if (mangos == null || mangosFolders == null) { Console.WriteLine("No mangos or groups ids files, ending."); return; }
 
     string chapterNumber = "", newChapterFolder = "";
@@ -242,6 +250,8 @@ async Task FindVolumeNumbers()
 
 async Task CheckForAlreadyUploadedChapters()
 {
+    LoadFiles();
+
     if (mangos == null || groups == null) { Console.WriteLine("No mangos or groups ids files, ending."); return; }
 
     Console.WriteLine("Enter the path where already uploaded chapters should be moved :");
@@ -302,12 +312,20 @@ async Task CheckForAlreadyUploadedChapters()
 
 async Task CompareTitles()
 {
+    LoadFiles();
+
+    if (mangos == null || mangosFolders == null) { Console.WriteLine("No mangos or groups ids files, ending."); return; }
+
     foreach (var mangoName in mangos)
     {
         if (!mangoName.Value.Contains("Not found") && !mangoName.Value.Contains("None picked"))
         {
             var mangT = await api.Manga.Get(mangoName.Value);
-            Console.WriteLine(mangoName.Key + " : " + mangT.Data.Attributes.Title.First().Value);
+            var altTitles = mangT.Data.Attributes.AltTitles;
+            string titles = mangT.Data.Attributes.Title.First().Value +
+                    (altTitles.Any(alt => alt.ContainsKey("es")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es")).First().Value + " (ES)" : "") +
+                    (altTitles.Any(alt => alt.ContainsKey("es-la")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es-la")).First().Value + " (ES-LA)" : "");
+            Console.WriteLine(mangoName.Key + " : " + titles);
             await Task.Delay(450);
         }
     }
@@ -357,6 +375,8 @@ void MoveBackFromUploader()
 
 void LogChapters()
 {
+    LoadFiles();
+
     if (mangos == null) { Console.WriteLine("No mangos file, ending."); return; }
 
     string logOutput = "";
@@ -380,6 +400,50 @@ void LogChapters()
     logOutput += $"Total:{total}";
 
     File.WriteAllText(Path.Combine(mainFolder, "chaptersLog.txt"), logOutput, Encoding.UTF8);
+}
+
+void CombineJsons()
+{
+    int count = 0;
+    Console.WriteLine("Enter uploader's path (e.g. : Y:\\Uploader) :");
+    string uploaderFolder = Console.ReadLine();
+
+    if (uploaderFolder == null || uploaderFolder == "")
+    {
+        Console.WriteLine("No path entered, aborting.");
+        return;
+    }
+
+    if (!File.Exists(Path.Combine(uploaderFolder, "name_id_map.json")))
+    {
+        Console.WriteLine("name_id_map.json not found, aborting.");
+        return;
+    }
+    LoadFiles();
+
+    if (mangos == null)
+    {
+        Console.WriteLine("mangosId.json not found, aborting.");
+        return;
+    }
+
+    using StreamReader temp = new StreamReader(Path.Combine(uploaderFolder, "name_id_map.json"));
+    var jsonAggregate = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>> (temp.ReadToEnd());
+    var mangaAggregate = jsonAggregate["manga"];
+
+    foreach (var mango in mangos)
+    {
+        if (mangaAggregate.ContainsKey(mango.Key))
+        {
+            count++;
+            Console.WriteLine($"Found {mango.Key}");
+            mangos[mango.Key] = mangaAggregate[mango.Key];
+        }
+    }
+
+    Console.WriteLine($"\r Found {count} titles.");
+    File.WriteAllText(Path.Combine(mainFolder, "mangosId.json"), JsonSerializer.Serialize(mangos, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), Encoding.UTF8);
+
 }
 
 int GetNthIndex(string s, char t, int n)
