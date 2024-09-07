@@ -26,7 +26,6 @@ Dictionary<string, string>?
 
 try
 {
-    await GetIds();
     if (!Init()) return;
 
     while (true)
