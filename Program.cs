@@ -279,7 +279,7 @@ async Task FindMangosId()
                             id = results.Data[int.Parse(selection) - 1].Id;
                             titleLog = results.Data[int.Parse(selection) - 1].Attributes.Title.First().Value;
                             break;
-                        case string s when s != " ":
+                        case string s when s != " " && s != string.Empty:
                             id = s;
                             titleLog = s + " (manual input)";
                             break;
