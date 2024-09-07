@@ -279,7 +279,7 @@ async Task FindMangosId()
                             id = results.Data[int.Parse(selection) - 1].Id;
                             titleLog = results.Data[int.Parse(selection) - 1].Attributes.Title.First().Value;
                             break;
-                        case string s when s != string.Empty:
+                        case string s when s != " ":
                             id = s;
                             titleLog = s + " (manual input)";
                             break;
@@ -299,12 +299,12 @@ async Task FindMangosId()
     Console.WriteLine();
     foreach (var mango in foundIds)
     {
-        foreach (var foundDuplicate in mangaAggregate.Where(m => m.Value == mango.Value && m.Key != mango.Key))
+        foreach (var foundDuplicate in mangaAggregate.Where(m => m.Value == mango.Value && m.Key != mango.Key && m.Value != "Not found" && m.Value != "None picked"))
         {
             Console.WriteLine($"MISMATCH WARNING : ID found for \"{mango.Key}\" is already matched with \"{foundDuplicate.Key}\" in the aggregate.");
         }
 
-        foreach (var foundDuplicate in foundIds.Where(m => m.Value == mango.Value && m.Key != mango.Key))
+        foreach (var foundDuplicate in foundIds.Where(m => m.Value == mango.Value && m.Key != mango.Key && m.Value != "Not found" && m.Value != "None picked"))
         {
             Console.WriteLine($"MISMATCH WARNING : \"{mango.Key}\" and \"{foundDuplicate.Key}\" have the same ID.");
         }
