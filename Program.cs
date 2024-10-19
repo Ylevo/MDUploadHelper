@@ -5,8 +5,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using JsonSerializer = System.Text.Json.JsonSerializer;
-using System;
-using System.Linq;
 
 
 System.Globalization.CultureInfo customCulture = (System.Globalization.CultureInfo)System.Threading.Thread.CurrentThread.CurrentCulture.Clone();
@@ -43,7 +41,8 @@ try
         Console.WriteLine("8 - Move folders to uploader");
         Console.WriteLine("9 - Move folders BACK from uploader");
         Console.WriteLine("10 - Fetch chapters' ids using datetimes");
-        Console.WriteLine("11 - Exit");
+        Console.WriteLine("11 - Check scrap status of titles");
+        Console.WriteLine("12 - Exit");
         Console.WriteLine();
 
         string input = Console.ReadLine();
@@ -85,6 +84,9 @@ try
                 await GetIds();
                 break;
             case "11":
+                await CheckScrapStatus();
+                break;
+            case "12":
                 return;
         }
 
@@ -120,8 +122,9 @@ bool Init()
     {
         Console.WriteLine("Enter main folder path.");
         mainFolder = Console.ReadLine();
-        mangosFolders = Directory.GetDirectories(mainFolder).Select(d => new DirectoryInfo(d).Name).ToList();
     }
+
+    mangosFolders = Directory.GetDirectories(mainFolder).Select(d => new DirectoryInfo(d).Name).ToList();
 
     return true;
 }
@@ -202,7 +205,6 @@ void LoadFiles()
 void GetGroupsNames()
 {
     LoadFiles();
-    if (mangos == null) { Console.WriteLine("No mangos ID, ending."); return; }
 
     var groupsAggregate = GetAggregate()["group"];
 
@@ -503,6 +505,44 @@ void LogChapters()
     logOutput += $"Total:{total}";
 
     File.WriteAllText(Path.Combine(mainFolder, "chaptersLog.txt"), logOutput, new UTF8Encoding(false));
+}
+
+async Task CheckScrapStatus()
+{
+    Console.WriteLine("Enter title urls or ids (one per line) then press enter :");
+    List<string> urls = new();
+    string input = Console.ReadLine();
+
+    while (input != "")
+    {
+        urls.Add(input);
+        input = Console.ReadLine();
+    }
+
+    foreach(string url in urls)
+    {
+        string id = url.Contains('/') ? url.Split("/")[4] : url;
+        List<Chapter> chapterList = new();
+        var currentMangoChapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+
+        while (chapterList.Count < currentMangoChapters.Total)
+        {
+            currentMangoChapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+            chapterList.AddRange(currentMangoChapters.Data);
+            await Task.Delay(350);
+        }
+
+        int esChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es").Count();
+        int eslaChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es-la").Count();
+        Console.WriteLine("Checking : " + url);
+        Console.WriteLine(eslaChaptersCount + " chapters in spanish (LATAM).");
+        Console.WriteLine(esChaptersCount + " chapters in spanish.");
+        Console.WriteLine();
+        
+    }
+
+    Console.WriteLine("Press enter to continue.");
+    Console.ReadLine();
 }
 
 Dictionary<string, Dictionary<string, string>> GetAggregate()
