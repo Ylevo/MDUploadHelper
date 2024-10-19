@@ -511,16 +511,16 @@ async Task CheckScrapStatus()
 {
     Console.WriteLine("Enter title urls or ids (one per line) then press enter :");
     List<string> urls = new();
-    string input = Console.ReadLine();
+    string input;
 
-    while (input != "")
+    while ((input = Console.ReadLine()) != "")
     {
         urls.Add(input);
-        input = Console.ReadLine();
     }
 
     foreach(string url in urls)
     {
+        Console.WriteLine("Checking : " + url);
         string id = url.Contains('/') ? url.Split("/")[4] : url;
         List<Chapter> chapterList = new();
         var currentMangoChapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
@@ -534,11 +534,10 @@ async Task CheckScrapStatus()
 
         int esChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es").Count();
         int eslaChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es-la").Count();
-        Console.WriteLine("Checking : " + url);
+        
         Console.WriteLine(eslaChaptersCount + " chapters in spanish (LATAM).");
         Console.WriteLine(esChaptersCount + " chapters in spanish.");
         Console.WriteLine();
-        
     }
 
     Console.WriteLine("Press enter to continue.");
