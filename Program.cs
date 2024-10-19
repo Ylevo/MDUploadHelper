@@ -113,7 +113,7 @@ bool Init()
 
     if (!Directory.Exists(settings["uploaderFolder"]))
     {
-        Console.WriteLine("Uploader folder not found. Exiting.");
+        Console.WriteLine("Uploader folder not found, set it in the settings.json file. Exiting.");
         Console.ReadLine();
         return false;
     }
