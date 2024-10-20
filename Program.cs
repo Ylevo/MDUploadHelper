@@ -334,15 +334,23 @@ async Task CompareTitles()
 
     foreach (var mangoName in mangos)
     {
+        await Task.Delay(350);
+
         if (!mangoName.Value.Contains("Not found") && !mangoName.Value.Contains("None picked"))
         {
             var mangT = await api.Manga.Get(mangoName.Value);
+
+            if (mangT.Result == "error")
+            {
+                Console.WriteLine($"Error : skipping \"{mangoName.Key}\" ; mango not found on MD.");
+                continue;
+            }
+
             var altTitles = mangT.Data.Attributes.AltTitles;
             string titles = mangT.Data.Attributes.Title.First().Value +
                     (altTitles.Any(alt => alt.ContainsKey("es")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es")).First().Value + " (ES)" : "") +
                     (altTitles.Any(alt => alt.ContainsKey("es-la")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es-la")).First().Value + " (ES-LA)" : "");
             Console.WriteLine(mangoName.Key + " : " + titles);
-            await Task.Delay(450);
         }
     }
 }
