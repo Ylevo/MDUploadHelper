@@ -146,7 +146,7 @@ void UpdateAggregate()
 async Task GetIds()
 {
     List<Chapter> chapterList = new();
-    var filter = new ChaptersFilter();
+    var filter = new ChaptersFilter() { Limit = 500 };
 
     Console.WriteLine("Enter starting datetime (format YYYY/MM/DD h:mm:ss) :");
     DateTime minDate = DateTime.Parse(Console.ReadLine());
@@ -251,6 +251,7 @@ async Task FindMangosId()
         else
         {
             results = await api.Manga.List(new MangaFilter { Title = mangoName, ContentRating = new ContentRating[] { ContentRating.safe, ContentRating.suggestive, ContentRating.erotica, ContentRating.pornographic } });
+
             switch (results.Total)
             {
                 case int x when x == 0:
@@ -357,12 +358,12 @@ async Task FindVolumeNumbers()
     {
         Console.WriteLine(currentMangoFolder);
         List<Chapter> chapterList = new();
-        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
         chapterList.AddRange(currentMangoChapters.Data);
 
         while (chapterList.Count < currentMangoChapters.Total)
         {
-            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
             chapterList.AddRange(currentMangoChapters.Data);
             await Task.Delay(350);
         }
@@ -413,12 +414,12 @@ async Task CheckForAlreadyUploadedChapters()
     {
         Console.WriteLine(currentMangoFolder);
         List<Chapter> chapterList = new();
-        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
         chapterList.AddRange(currentMangoChapters.Data);
 
         while (chapterList.Count < currentMangoChapters.Total)
         {
-            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = new[] { "es", "es-la" }, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
             chapterList.AddRange(currentMangoChapters.Data);
             await Task.Delay(350);
         }
@@ -523,18 +524,11 @@ async Task CheckScrapStatus()
         Console.WriteLine("Checking : " + url);
         string id = url.Contains('/') ? url.Split("/")[4] : url;
         List<Chapter> chapterList = new();
-        var currentMangoChapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+        int eslaChaptersCount = (await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } })).Total;
+        await Task.Delay(350);
+        int esChaptersCount = (await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } })).Total;
+        await Task.Delay(350);
 
-        while (chapterList.Count < currentMangoChapters.Total)
-        {
-            currentMangoChapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es", "es-la" }, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
-            chapterList.AddRange(currentMangoChapters.Data);
-            await Task.Delay(350);
-        }
-
-        int esChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es").Count();
-        int eslaChaptersCount = chapterList.Where(a => a.Attributes.TranslatedLanguage == "es-la").Count();
-        
         Console.WriteLine(eslaChaptersCount + " chapters in spanish (LATAM).");
         Console.WriteLine(esChaptersCount + " chapters in spanish.");
         Console.WriteLine();
