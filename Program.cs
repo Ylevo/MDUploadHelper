@@ -5,21 +5,31 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+using Serilog;
 
 
 System.Globalization.CultureInfo customCulture = (System.Globalization.CultureInfo)System.Threading.Thread.CurrentThread.CurrentCulture.Clone();
 customCulture.NumberFormat.NumberDecimalSeparator = ".";
 System.Threading.Thread.CurrentThread.CurrentCulture = customCulture;
 
+const string FILENAME_REGEX = @"(?:\[(?<artist>.+?)?\])?\s?"  // Artist
+            + @"(?<title>.+?)"  // Manga title
+            + @"(?:\s?\[(?<language>[a-z]{2}(?:-[a-z]{2})?|[a-zA-Z]{3}|[a-zA-Z]+)?\])?\s-\s"  // Language
+            + @"(?<prefix>(?:[c](?:h(?:a?p?(?:ter)?)?)?\.?\s?))?(?<chapter>\d+(?:\.\d+)?)"  // Chapter number and prefix
+            + @"(?:\s?\((?:[v](?:ol(?:ume)?(?:s)?)?\.?\s?)?(?<volume>\d+(?:\.\d+)?)?\))?"  // Volume number
+            + @"(?:\s?\((?<chapter_title>.+)\))?"  // Chapter title
+            + @"(?:\s?\{(?<publish_date>(?<publish_year>\d{4})-(?<publish_month>\d{2})-(?<publish_day>\d{2})(?:[T\s](?<publish_hour>\d{2})[\:\-](?<publish_minute>\d{2})(?:[\:\-](?<publish_microsecond>\d{2}))?(?:(?<publish_offset>[+-])(?<publish_timezone>\d{2}[\:\-]?\d{2}))?)?)\})?"  // Publish date
+            + @"(?:\s?\[(?:(?<group>.+))?\])?"  // Groups
+            + @"(?:\s?\{v?(?<version>\d)?\})?"  // Chapter version
+            + @"(?:\.(?<extension>zip|cbz))?$";  // File extension
 var api = MangaDex.Create();
 string mainFolder = "";
-Dictionary<string, string>? settings = null;
 List<string>? mangosFolders = null;
 MangaList results;
 
 
-Dictionary<string, string>? 
-    mangos = null, 
+Dictionary<string, string>?
+    mangos = null,
     groups = null;
 
 try
@@ -57,7 +67,7 @@ try
                 GetGroupsNames();
                 break;
             case "2":
-                await FindMangosId();
+                await TitleMatching();
                 break;
             case "3":
                 CheckForDuplicates();
@@ -101,26 +111,36 @@ catch (Exception ex)
 
 bool Init()
 {
-    if (!File.Exists("settings.json"))
+    var logConf = new LoggerConfiguration()
+                .MinimumLevel.Verbose()
+                .WriteTo.Logger(lc => lc
+                    .Filter.ByExcluding(log => log.Level == Serilog.Events.LogEventLevel.Fatal)
+                    .WriteTo.Console(outputTemplate: "{Level}: {Message:lj}{NewLine}"));
+    logConf.WriteTo.File(
+    "Logs/mdshLog_.txt",
+    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+    fileSizeLimitBytes: 50000000,
+    rollingInterval: RollingInterval.Day,
+    rollOnFileSizeLimit: true,
+    retainedFileTimeLimit: TimeSpan.FromDays(7)
+    );
+
+    Log.Logger = logConf.CreateLogger();
+
+    try
     {
-        Console.WriteLine("Settings file not found. Exiting.");
-        Console.ReadLine();
-        return false;
+        Settings.LoadSettings();
     }
-
-    using StreamReader temp = new StreamReader("settings.json");
-    settings = JsonSerializer.Deserialize<Dictionary<string, string>>(temp.ReadToEnd());
-
-    if (!Directory.Exists(settings["uploaderFolder"]))
+    catch (Exception ex)
     {
-        Console.WriteLine("Uploader folder not found, set it in the settings.json file. Exiting.");
+        Log.Error(ex, "Could not load the settings from settings.json, check the logs for more info. Exiting.");
         Console.ReadLine();
         return false;
     }
 
     while (!Directory.Exists(mainFolder))
     {
-        Console.WriteLine("Enter main folder path.");
+        Console.WriteLine("Enter the main folder's path.");
         mainFolder = Console.ReadLine();
     }
 
@@ -139,8 +159,8 @@ void UpdateAggregate()
         return;
     }
 
-    var aggregate = GetAggregate();
-    File.WriteAllText(Path.Combine(settings["uploaderFolder"], "name_id_map.json"), JsonSerializer.Serialize(aggregate, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true }), new UTF8Encoding(false));
+    var aggregate = GetOnlineNameIdMapping();
+    File.WriteAllText(Path.Combine(Settings.UploaderFolder, "name_id_map.json"), JsonSerializer.Serialize(aggregate, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true }), new UTF8Encoding(false));
 }
 
 async Task GetIds()
@@ -206,7 +226,7 @@ void GetGroupsNames()
 {
     LoadFiles();
 
-    var groupsAggregate = GetAggregate()["group"];
+    var groupsAggregate = GetLocalNameIdMapping()["group"];
 
     Dictionary<string, string> groupsDic = new();
 
@@ -214,13 +234,12 @@ void GetGroupsNames()
     {
         var chaptersFolders = Directory.GetDirectories(Path.Combine(mainFolder, mangoName)).Select(d => new DirectoryInfo(d).Name);
 
-        foreach(string chapterName in chaptersFolders)
+        foreach (string folderName in chaptersFolders)
         {
-            var arrayChapterName = chapterName.Split(' ');
-            string volumeNumber = Regex.Match(chapterName, @"(?<=\(v)(\d){1,2}(?=\))").Value;
-            var chapterGroups = String.Join(" ", arrayChapterName.Skip(volumeNumber == "" ? 4 : 5)).Trim(new char[] { '[', ']' }).Split('+').OrderBy(t => t).ToArray();
+            var parsedFolderName = ParseFolderName(folderName);
+            var chapterGroups = parsedFolderName["group"].Value.Split('+').OrderBy(t => t).ToArray();
 
-            foreach(var chapterGroup in chapterGroups)
+            foreach (var chapterGroup in chapterGroups)
             {
                 if (!groupsDic.Keys.Contains(chapterGroup))
                 {
@@ -233,20 +252,20 @@ void GetGroupsNames()
     File.WriteAllText(Path.Combine(mainFolder, "groupsId.json"), JsonSerializer.Serialize(groupsDic, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true }), new UTF8Encoding(false));
 }
 
-async Task FindMangosId()
+async Task TitleMatching()
 {
     LoadFiles();
 
     string titleLog = "", id = "", log = "", selection = "", titles = "";
     Dictionary<string, string> foundIds = new();
-    var mangaAggregate = GetAggregate()["manga"];
+    var mangoLocalMapping = GetLocalNameIdMapping()["manga"];
 
     foreach (var mangoName in mangosFolders)
     {
-        if (mangaAggregate.ContainsKey(mangoName))
+        if (mangoLocalMapping.ContainsKey(mangoName))
         {
-            Console.WriteLine($"Found \"{mangoName}\" in aggregate.");
-            id = mangaAggregate[mangoName];
+            Console.WriteLine($"Found \"{mangoName}\" in local name_id_map.json.");
+            id = mangoLocalMapping[mangoName];
         }
         else
         {
@@ -257,20 +276,32 @@ async Task FindMangosId()
                 case int x when x == 0:
                     titleLog = "Not found";
                     id = "Not found";
+                    Console.WriteLine("No title found for " + mangoName);
                     break;
                 case int x when x == 1:
                     titleLog = results.Data[x - 1].Attributes.Title.First().Value;
                     id = results.Data[x - 1].Id;
+                    Console.WriteLine(mangoName + " matched with " + titleLog);
                     break;
                 case int x when x > 1:
+                    Console.WriteLine();
                     Console.WriteLine("Matching for : " + mangoName);
 
                     for (int i = 0; i < results.Data.Count && i < 5; i++)
                     {
                         var altTitles = results.Data[i].Attributes.AltTitles;
-                        titles = results.Data[i].Attributes.Title.First().Value +
-                                (altTitles.Any(alt => alt.ContainsKey("es")) ? "\n" + new string(' ', 11) + altTitles.First(alt => alt.ContainsKey("es")).First().Value + " (ES)" : "") +
-                                (altTitles.Any(alt => alt.ContainsKey("es-la")) ? "\n" + new string(' ', 11) + altTitles.First(alt => alt.ContainsKey("es-la")).First().Value + " (ES-LA)" : "");
+                        titles = results.Data[i].Attributes.Title.First().Value;
+
+                        foreach (string language in Settings.Languages)
+                        {
+                            if (altTitles.Any(alt => alt.ContainsKey(language)))
+                            {
+                                titles += "\n" + new string(' ', 11) 
+                                    + altTitles.First(alt => alt.ContainsKey(language)).First().Value 
+                                    + " (" + language.ToUpper() + ")";
+                            }
+                        }
+
                         Console.WriteLine("Result " + (i + 1) + " : " + titles);
                     }
 
@@ -294,6 +325,7 @@ async Task FindMangosId()
                             titleLog = "None picked";
                             break;
                     }
+                    Console.WriteLine();
                     break;
             }
         }
@@ -311,7 +343,7 @@ void CheckForDuplicates()
 {
     LoadFiles();
     if (mangos == null) { Console.WriteLine("No mangos files, ending."); return; }
-    var mangaAggregate = GetAggregate()["manga"];
+    var mangaAggregate = GetLocalNameIdMapping()["manga"];
 
     foreach (var mango in mangos)
     {
@@ -347,9 +379,17 @@ async Task CompareTitles()
             }
 
             var altTitles = mangT.Data.Attributes.AltTitles;
-            string titles = mangT.Data.Attributes.Title.First().Value +
-                    (altTitles.Any(alt => alt.ContainsKey("es")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es")).First().Value + " (ES)" : "") +
-                    (altTitles.Any(alt => alt.ContainsKey("es-la")) ? "\n" + new string(' ', mangoName.Key.Length + 3) + altTitles.First(alt => alt.ContainsKey("es-la")).First().Value + " (ES-LA)" : "");
+            string titles = mangT.Data.Attributes.Title.First().Value;
+
+            foreach (string language in Settings.Languages)
+            {
+                if (altTitles.Any(alt => alt.ContainsKey(language)))
+                {
+                    titles += "\n" + new string(' ', mangoName.Key.Length + 3)
+                        + altTitles.First(alt => alt.ContainsKey(language)).First().Value
+                        + " (" + language.ToUpper() + ")";
+                }
+            }
             Console.WriteLine(mangoName.Key + " : " + titles);
         }
     }
@@ -422,12 +462,12 @@ async Task CheckForAlreadyUploadedChapters()
     {
         Console.WriteLine(currentMangoFolder);
         List<Chapter> chapterList = new();
-        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = new[] { "es", "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+        var currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = Settings.Languages, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
         chapterList.AddRange(currentMangoChapters.Data);
 
         while (chapterList.Count < currentMangoChapters.Total)
         {
-            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = new[] { "es", "es-la" }, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+            currentMangoChapters = await api.Manga.Feed(mangos[currentMangoFolder], new MangaFeedFilter { Limit = 500, TranslatedLanguage = Settings.Languages, Offset = chapterList.Count, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
             chapterList.AddRange(currentMangoChapters.Data);
             await Task.Delay(350);
         }
@@ -437,7 +477,7 @@ async Task CheckForAlreadyUploadedChapters()
         foreach (var currentChapterFolder in chaptersFolders)
         {
             var arrayChapterName = currentChapterFolder.Split(' ');
-            string volumeNumber = Regex.Match(currentChapterFolder, @"(?<=\(v)(\d){1,2}(?=\))").Value;
+            string volumeNumber = Regex.Match(currentChapterFolder, @"(?<=\(v)(\d*)(?=\))").Value;
             var chapterGroups = String.Join(" ", arrayChapterName.Skip(volumeNumber == "" ? 4 : 5)).Trim(new char[] { '[', ']' }).Split('+').OrderBy(t => t).ToArray();
             chapterNumber = arrayChapterName[3];
             chapterNumber = chapterNumber == "000" ? null : decimal.Parse(chapterNumber.Replace("c", "")).ToString();
@@ -448,7 +488,7 @@ async Task CheckForAlreadyUploadedChapters()
                 groupsId[i] = groups[chapterGroups[i]];
             }
             bool foundChapter = chapterList.Any(c =>
-                                               c.Attributes.Chapter == chapterNumber && 
+                                               c.Attributes.Chapter == chapterNumber &&
                                                c.ScanlationGroups().Select(g => g.Id).ToArray().Intersect(groupsId).Any()
                                                );
 
@@ -472,14 +512,14 @@ void MoveToUploader()
 
         foreach (var currentChapterFolder in chaptersFolders)
         {
-            Directory.Move(Path.Combine(mainFolder, currentMangoFolder, currentChapterFolder), Path.Combine(settings["uploaderFolder"], "to_upload", currentChapterFolder));
+            Directory.Move(Path.Combine(mainFolder, currentMangoFolder, currentChapterFolder), Path.Combine(Settings.UploaderFolder, "to_upload", currentChapterFolder));
         }
     }
 }
 
 void MoveBackFromUploader()
 {
-    var movedFolders = Directory.GetDirectories(Path.Combine(settings["uploaderFolder"], "to_upload"));
+    var movedFolders = Directory.GetDirectories(Path.Combine(Settings.UploaderFolder, "to_upload"));
     foreach (string folder in movedFolders)
     {
         string title = Path.GetFileName(folder).Split(' ').First();
@@ -527,26 +567,40 @@ async Task CheckScrapStatus()
         urls.Add(input);
     }
 
-    foreach(string url in urls)
+    foreach (string url in urls)
     {
         Console.WriteLine("Checking : " + url);
         string id = url.Contains('/') ? url.Split("/")[4] : url;
         List<Chapter> chapterList = new();
-        int eslaChaptersCount = (await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es-la" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } })).Total;
-        await Task.Delay(350);
-        int esChaptersCount = (await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = new[] { "es" }, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } })).Total;
+        var chapters = await api.Manga.Feed(id, new MangaFeedFilter { TranslatedLanguage = Settings.Languages, Order = { { MangaFeedFilter.OrderKey.chapter, OrderValue.asc } } });
+
+        foreach (string language in Settings.Languages)
+        {
+            Console.WriteLine(chapters.Data.Count(d => d.Attributes.TranslatedLanguage == language) + " chapters in " + language.ToUpper() + ".");
+        }
         await Task.Delay(350);
 
-        Console.WriteLine(eslaChaptersCount + " chapters in spanish (LATAM).");
-        Console.WriteLine(esChaptersCount + " chapters in spanish.");
         Console.WriteLine();
     }
 
-    Console.WriteLine("Press enter to continue.");
-    Console.ReadLine();
+    Console.WriteLine("Press any key to continue.");
+    Console.ReadKey();
 }
 
-Dictionary<string, Dictionary<string, string>> GetAggregate()
+Dictionary<string, Dictionary<string, string>> GetLocalNameIdMapping()
+{
+    using var client = new HttpClient();
+    client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
+    if (Settings.UploaderFolder == "" ||  !Directory.Exists(Settings.UploaderFolder))
+    {
+        throw new DirectoryNotFoundException();
+    }
+    string localJson = File.ReadAllText(Path.Combine(Settings.UploaderFolder, "name_id_map.json"));
+
+    return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>>(localJson);
+}
+
+Dictionary<string, Dictionary<string, string>> GetOnlineNameIdMapping()
 {
     using var client = new HttpClient();
     client.DefaultRequestHeaders.UserAgent.TryParseAdd("request");
@@ -554,6 +608,11 @@ Dictionary<string, Dictionary<string, string>> GetAggregate()
     dynamic aggregate = JsonConvert.DeserializeObject(gist["files"]["name_id_map.json"]["content"].ToString());
 
     return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>>(aggregate.ToString());
+}
+
+GroupCollection ParseFolderName(string folderName)
+{
+    return Regex.Match(folderName, FILENAME_REGEX, RegexOptions.IgnoreCase).Groups;
 }
 
 int GetNthIndex(string s, char t, int n)
@@ -572,3 +631,18 @@ int GetNthIndex(string s, char t, int n)
     }
     return -1;
 }
+
+public static class Settings
+{
+    public static string UploaderFolder { get; private set; }
+    public static string[] Languages { get; private set; }
+
+    public static void LoadSettings()
+    {
+        string jsonString = File.ReadAllText("settings.json");
+        dynamic settings = JsonConvert.DeserializeObject(jsonString);
+        UploaderFolder = settings.uploaderFolder;
+        Languages = settings.languages.ToObject<string[]>();
+    }
+}
+
