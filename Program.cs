@@ -484,20 +484,20 @@ async Task FindVolumeNumbers()
 
         int volumeNumbersFound = 0;
         Console.WriteLine(currentMangoFolder);
-        var aggregate = await api.Manga.Aggregate(mangoDic[currentMangoFolder]);
+        var volumes = (await api.Manga.Aggregate(mangoDic[currentMangoFolder])).Volumes.Where(v => v.Key != "none");
         await Task.Delay(350);
 
-        if (aggregate.Volumes.Count == 0)
+        if (!volumes.Any())
         {
             Log.Information("Couldn't find any volumes for {0}.\r\n", currentMangoFolder);
             continue;
         }
 
-        var volumeNumberFuckery = aggregate.Volumes.SelectMany(vol => vol.Value.Chapters.Values).GroupBy(chData => chData.Chapter).Where(g => g.Count() > 1);
+        var volumeNumberFuckery = volumes.SelectMany(vol => vol.Value.Chapters.Values).GroupBy(chData => chData.Chapter).Where(g => g.Count() > 1);
 
         if (volumeNumberFuckery.Any())
         {
-            void additionalInfo() => Log.Information("List of chapter numbers found in multiple volumes :\r\n{0}", volumeNumberFuckery.Select(f => f.Key).ToArray());
+            void additionalInfo() => Log.Information("List of chapter numbers found in multiple volumes :\r\n{0}", volumeNumberFuckery.Select(f => f.Key).Order().ToArray());
 
             if (!AskForConfirmation("Some chapter numbers are present in more than one volume. Try to volume number anyway? (Y/n)", additionalInfo)) { continue; }
         }
@@ -522,7 +522,7 @@ async Task FindVolumeNumbers()
             }
 
             string chapterNumber = decimal.Parse(parsedFolderName["chapter"].Value).ToString();
-            string? foundChapter = aggregate.Volumes.Select(volume => volume.Value).FirstOrDefault(volData => volData.Chapters.Values.Any(chData => chData.Chapter == chapterNumber))?.Volume;
+            string? foundChapter = volumes.Select(volume => volume.Value).FirstOrDefault(volData => volData.Chapters.Values.Any(chData => chData.Chapter == chapterNumber))?.Volume;
 
             if (foundChapter != null && !parsedFolderName["volume"].Success)
             {
