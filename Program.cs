@@ -606,15 +606,15 @@ async Task CheckForAlreadyUploadedChapters()
                 continue;
             }
 
-            var groupsIds = chapterGroups.Select(g => groupsDic[g]).ToArray();
+            var groupsIds = chapterGroups.Select(g => groupsDic[g]);
             string chapterNumber = decimal.Parse(parsedFolderName["chapter"].Value).ToString();
             string chapterLanguage = parsedFolderName["language"].Value;
             string volumeNumber = parsedFolderName["volume"].Success ? decimal.Parse(parsedFolderName["volume"].Value).ToString() : string.Empty;
             bool foundChapter = chapterList.Any(c =>
                                                c.Attributes.Chapter == chapterNumber &&
-                                               c.ScanlationGroups().Select(g => g.Id).ToArray().Intersect(groupsIds).Any() &&
+                                               c.ScanlationGroups().Select(g => g.Id).Intersect(groupsIds).Any() &&
                                                c.Attributes.TranslatedLanguage == chapterLanguage &&
-                                               (string.IsNullOrEmpty(volumeNumber) || c.Attributes.Volume == volumeNumber)
+                                               (string.IsNullOrEmpty(volumeNumber) || c.Attributes.Volume == volumeNumber || c.Attributes.Volume == null)
                                                );
 
             if (foundChapter)
