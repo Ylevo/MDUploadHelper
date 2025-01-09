@@ -1,7 +1,7 @@
 ﻿using System.Text.Json.Serialization;
 using System.Text.Json;
 
-namespace TMOScrapHelper
+namespace MDUploadHelper
 {
     public class GistResponseParser : JsonConverter<NameIdMap>
     {

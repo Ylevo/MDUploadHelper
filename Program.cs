@@ -4,29 +4,16 @@ using System.Text.RegularExpressions;
 using Serilog;
 using System.Globalization;
 using iluvadev.ConsoleProgressBar;
-using TMOScrapHelper;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 using Microsoft.Extensions.Configuration;
 using Pastel;
 using Serilog.Sinks.SystemConsole.Themes;
-using System.Linq;
-
+using MDUploadHelper;
 
 CultureInfo customCulture = (CultureInfo)System.Threading.Thread.CurrentThread.CurrentCulture.Clone();
 customCulture.NumberFormat.NumberDecimalSeparator = ".";
 System.Threading.Thread.CurrentThread.CurrentCulture = customCulture;
-
-const string FILENAME_REGEX = @"(?:\[(?<artist>.+?)?\])?\s?"  // Artist
-            + @"(?<title>.+?)"  // Manga title
-            + @"(?:\s?\[(?<language>[a-z]{2}(?:-[a-z]{2})?|[a-zA-Z]{3}|[a-zA-Z]+)?\])?\s-\s"  // Language
-            + @"(?<prefix>(?:[c](?:h(?:a?p?(?:ter)?)?)?\.?\s?))?(?<chapter>\d+(?:\.\d+)?)"  // Chapter number and prefix
-            + @"(?:\s?\((?:[v](?:ol(?:ume)?(?:s)?)?\.?\s?)?(?<volume>\d+(?:\.\d+)?)?\))?"  // Volume number
-            + @"(?:\s?\((?<chapter_title>.+)\))?"  // Chapter title
-            + @"(?:\s?\{(?<publish_date>(?<publish_year>\d{4})-(?<publish_month>\d{2})-(?<publish_day>\d{2})(?:[T\s](?<publish_hour>\d{2})[\:\-](?<publish_minute>\d{2})(?:[\:\-](?<publish_microsecond>\d{2}))?(?:(?<publish_offset>[+-])(?<publish_timezone>\d{2}[\:\-]?\d{2}))?)?)\})?"  // Publish date
-            + @"(?:\s?\[(?:(?<group>.+))?\])?"  // Groups
-            + @"(?:\s?\{v?(?<version>\d)?\})?"  // Chapter version
-            + @"(?:\.(?<extension>zip|cbz))?$";  // File extension
 
 IMangaDex? api = null;
 string mainFolder = "";
@@ -48,7 +35,7 @@ while (true)
         Console.WriteLine("[- - - - - - MD Upload Helper - - - - - -]".Pastel(ConsoleColor.White).PastelBg("EA471D"));
         Console.WriteLine();
         Console.WriteLine("[- - - - - General - - - - -]".Pastel(ConsoleColor.White).PastelBg("EA471D"));
-        Console.WriteLine($"{"1".Pastel("FF6740")} - Get groups' names from folders");
+        Console.WriteLine($"{"1".Pastel("FF6740")} - Get groups' names");
         Console.WriteLine($"{"2".Pastel("FF6740")} - Match titles");
         Console.WriteLine($"{"3".Pastel("FF6740")} - Compare mango titles");
         Console.WriteLine($"{"4".Pastel("FF6740")} - Check for duplicates");
@@ -58,10 +45,10 @@ while (true)
         Console.WriteLine();
         Console.WriteLine("[- - - - - Bulk Uploader - - - - -]".Pastel(ConsoleColor.White).PastelBg("EA471D"));
         Console.WriteLine($"{"8".Pastel("FF6740")} - Merge json maps");
-        Console.WriteLine($"{"9".Pastel("FF6740")} - Move folders to uploader");
-        Console.WriteLine($"{"10".Pastel("FF6740")} - Move folders BACK from uploader");
+        Console.WriteLine($"{"9".Pastel("FF6740")} - Move chapters to uploader");
+        Console.WriteLine($"{"10".Pastel("FF6740")} - Move chapters back from uploader");
         Console.WriteLine();
-        Console.WriteLine("[- - - - - Misc - - - - - ]".Pastel(ConsoleColor.White).PastelBg("EA471D"));
+        Console.WriteLine("[- - - - - Miscellaneous - - - - - ]".Pastel(ConsoleColor.White).PastelBg("EA471D"));
         Console.WriteLine($"{"11".Pastel("FF6740")} - Fetch chapter ids using creation time");
         Console.WriteLine($"{"12".Pastel("FF6740")} - List titles with uploads from a user");
         Console.WriteLine($"{"13".Pastel("FF6740")} - Check chapter count of titles");
@@ -265,7 +252,8 @@ void GetGroupsNames()
 
         foreach (string folderName in chaptersFolders)
         {
-            var parsedFolderName = ParseFolderName(folderName);
+            if (!ParseFolderName(folderName, out var parsedFolderName)) { continue; }
+
             var chapterGroups = parsedFolderName["group"].Value.Split('+').OrderBy(t => t).ToArray();
 
             foreach (var chapterGroup in chapterGroups)
@@ -309,7 +297,7 @@ async Task TitleMatching()
         {
             Log.Information("Found \"{0}\" in local name_id_map.json.", mangoName);
             id = mangoLocalMapping[mangoName];
-            titleLog = id + " (aggregate)";
+            titleLog = id + " (mupl)";
             matched++;
         }
         else
@@ -337,13 +325,13 @@ async Task TitleMatching()
                         {
                             if (altTitles.Any(alt => alt.ContainsKey(language)))
                             {
-                                titles += "\n" + new string(' ', 10)
+                                titles += "\n" + new string(' ', 11)
                                     + altTitles.First(alt => alt.ContainsKey(language)).First().Value
                                     + " (" + language.ToUpper() + ")";
                             }
                         }
 
-                        Console.WriteLine("Result " + (i + 1) + " : " + titles);
+                        Console.WriteLine("Result " + $"{i + 1}".Pastel("FF6740") + " : " + titles);
                     }
 
                     selection = Console.ReadLine();
@@ -399,7 +387,7 @@ async Task CompareTitles()
     {
         cancelToken.Token.ThrowIfCancellationRequested();
 
-        if (!mangoName.Value.Contains("Not found") && !mangoName.Value.Contains("None picked"))
+        if (!mangoName.Value.Contains("Not found") && !mangoName.Value.Contains("None picked") && !string.IsNullOrWhiteSpace(mangoName.Value))
         {
             Log.Verbose("Fetching titles for {0}.", mangoName.Value);
             var mangT = await api.Manga.Get(mangoName.Value);
@@ -507,17 +495,11 @@ async Task FindVolumeNumbers()
         foreach (var currentChapterFolder in chaptersFolders)
         {
             Log.Verbose("Folder {0}.", currentChapterFolder);
-            var parsedFolderName = ParseFolderName(currentChapterFolder);
+            if (!ParseFolderName(currentChapterFolder, out var parsedFolderName)) { continue; }
 
             if (!parsedFolderName["prefix"].Success)
             {
                 Log.Verbose("Skipped oneshot");
-                continue;
-            }
-
-            if (!parsedFolderName["chapter"].Success)
-            {
-                Log.Error("Could not find the chapter number on the folder \"{0}\"", currentChapterFolder);
                 continue;
             }
 
@@ -583,14 +565,7 @@ async Task CheckForAlreadyUploadedChapters()
 
         foreach (var currentChapterFolder in chaptersFolders)
         {
-            var parsedFolderName = ParseFolderName(currentChapterFolder);
-
-            if (!parsedFolderName["chapter"].Success || !parsedFolderName["language"].Success)
-            {
-                errors++;
-                Log.Error("Could not find the chapter number or language on the folder \"{0}\"", currentChapterFolder);
-                continue;
-            }
+            if (!ParseFolderName(currentChapterFolder, out var parsedFolderName)) { continue; }
 
             var chapterGroups = parsedFolderName["group"].Value.Split('+').Where(g => !string.IsNullOrWhiteSpace(g)).OrderBy(g => g);
 
@@ -675,7 +650,7 @@ void MergeJsonMaps()
 {
     Log.Verbose("Merging main folder's json map with uploader's operation.");
 
-    if (!LoadAndCheckMap()) { PressKeyContinue(); return; }
+    if (!LoadAndCheckMap() || !settings.CheckUploader()) { PressKeyContinue(); return; }
 
     if (!AskForConfirmation("This will merge the main folder's json map with the uploader's. Existing entries' value will be overwritten. A backup will be created. Confirm? (Y/n)")) { return; }
 
@@ -690,7 +665,7 @@ void MoveToUploader()
 {
     Log.Verbose("Moving folders to uploader operation.");
 
-    if (!LoadAndCheckMap()) { PressKeyContinue(); return; }
+    if (!LoadAndCheckMap() || !settings.CheckUploader()) { PressKeyContinue(); return; }
 
     foreach (var currentMangoFolder in mangosFolders)
     {
@@ -709,13 +684,15 @@ void MoveBackFromUploader()
 {
     Log.Verbose("Moving folders back from uploader operation.");
 
-    if (!LoadAndCheckMap()) { PressKeyContinue(); return; }
+    if (!LoadAndCheckMap() || !settings.CheckUploader()) { PressKeyContinue(); return; }
 
     var movedFolders = Directory.GetDirectories(Path.Combine(settings.UploaderFolder, "to_upload"));
 
     foreach (string folder in movedFolders)
     {
-        string title = ParseFolderName(Path.GetFileName(folder))["title"].Value;
+        if (!ParseFolderName(folder, out var parsedFolderName)) { continue; }
+
+        string title = parsedFolderName["title"].Value;
         string backto = Path.Combine(mainFolder, title + "\\", Path.GetFileName(folder));
         Directory.Move(folder, backto);
     }
@@ -741,8 +718,8 @@ async Task GetIdsWithCreatedAt()
     string uploaderId = Console.ReadLine();
     Console.WriteLine("Enter group ID (or don't):");
     string groupId = Console.ReadLine();
-    Console.WriteLine("Enter language code, using space as separator if more than one:");
-    var languages = Console.ReadLine().Split(' ');
+    Console.WriteLine("Enter language code, using + as a separator if more than one:");
+    var languages = Console.ReadLine().Split('+');
     Log.Verbose("Min date: {0}\r\nMax date: {1}\r\nMango ID: {2}\r\nUploader ID: {3}\r\nLanguage codes: {4}.", minDate, maxDate, languages, uploaderId, languages);
 
     (List<Chapter> chapterList, bool success) = await FetchChapters(endpoint: FetchEndpoint.Chapter, languages: languages, titleId: titleId, uploaderId: uploaderId);
@@ -828,8 +805,8 @@ async Task CheckChapterCount()
         Console.WriteLine();
     }
 
-    File.WriteAllText("Logs/chapterCountLog.json", JsonSerializer.Serialize(jsonLog, jsonSerializerOptions), uTF8Encoding);
-    Console.WriteLine("Log file \"chapterCountLog.json\" has been created in the logs folder.");
+    File.WriteAllText("chapterCountLog.json", JsonSerializer.Serialize(jsonLog, jsonSerializerOptions), uTF8Encoding);
+    Console.WriteLine("Log file \"chapterCountLog.json\" has been created.");
     PressKeyContinue();
     Log.Verbose("Done checking chapter count of titles.");
 }
@@ -841,6 +818,8 @@ async Task CheckChapterCount()
 async Task UpdateWithTMOAggregate()
 {
     Log.Verbose("Updating using TMO aggregate operation.");
+
+    if (!settings.CheckUploader()) { PressKeyContinue(); return; }
 
     if (!AskForConfirmation("Don't do this unless you're scraping TMO. Confirm? (Y/n)")) { return; }
 
@@ -981,7 +960,7 @@ async Task<(List<Chapter> chapterList, bool success)> FetchChapters(FetchEndpoin
 
 NameIdMap GetLocalNameIdMap()
 {
-    return JsonSerializer.Deserialize<NameIdMap>(File.ReadAllText(settings.PathToUploaderMap));
+    return File.Exists(settings.PathToUploaderMap) ? JsonSerializer.Deserialize<NameIdMap>(File.ReadAllText(settings.PathToUploaderMap)) : new NameIdMap();
 }
 
 async Task<NameIdMap> GetOnlineNameIdMap()
@@ -995,9 +974,10 @@ async Task<NameIdMap> GetOnlineNameIdMap()
     return JsonSerializer.Deserialize<NameIdMap>(gist, jsonSerOptions);
 }
 
-GroupCollection ParseFolderName(string folderName)
+bool ParseFolderName(string folderName, out GroupCollection parsed)
 {
-    return Regex.Match(folderName, FILENAME_REGEX, RegexOptions.IgnoreCase).Groups;
+    parsed = Filename_Regex().Match(folderName).Groups;
+    return parsed[0].Success;
 }
 
 List<string> CheckForGaps(List<string> chapterNumbersList)
@@ -1059,5 +1039,8 @@ IPaginateFilter GetChapterFilter(FetchEndpoint endpoint, string[]? languages = n
 
 enum FetchEndpoint { Manga, Chapter }
 
-
-
+partial class Program
+{
+    [GeneratedRegex(@"(?:\[(?<artist>.+?)?\])?\s?(?<title>.+?)(?:\s?\[(?<language>[a-z]{2}(?:-[a-z]{2})?|[a-zA-Z]{3}|[a-zA-Z]+)?\])?\s-\s(?<prefix>(?:[c](?:h(?:a?p?(?:ter)?)?)?\.?\s?))?(?<chapter>\d+(?:\.\d+)?)(?:\s?\((?:[v](?:ol(?:ume)?(?:s)?)?\.?\s?)?(?<volume>\d+(?:\.\d+)?)?\))?(?:\s?\((?<chapter_title>.+)\))?(?:\s?\{(?<publish_date>(?<publish_year>\d{4})-(?<publish_month>\d{2})-(?<publish_day>\d{2})(?:[T\s](?<publish_hour>\d{2})[\:\-](?<publish_minute>\d{2})(?:[\:\-](?<publish_microsecond>\d{2}))?(?:(?<publish_offset>[+-])(?<publish_timezone>\d{2}[\:\-]?\d{2}))?)?)\})?(?:\s?\[(?:(?<group>.+))?\])?(?:\s?\{v?(?<version>\d)?\})?(?:\.(?<extension>zip|cbz))?$", RegexOptions.IgnoreCase, "fr-FR")]
+    private static partial Regex Filename_Regex();
+}
