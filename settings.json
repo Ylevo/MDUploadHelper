@@ -1,6 +1,6 @@
 {
-  "uploaderFolder": "Y:\\Uploader",
-  "languages": [ "es", "es-la" ],
+  "uploaderFolder": "",
+  "languages": [ "en" ],
   "skipMainFolder": false,
   "aggregateGistId": "741e9f9a9d97304a0e7cb5a656e8f401"
 }
