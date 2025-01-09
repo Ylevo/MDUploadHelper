@@ -28,6 +28,7 @@ Settings can be changed in the `settings.json` file.
   - [Get groups' names](#Get-groups'-names)
   - [Match titles](#Match-titles)
   - [Compare mango titles](#Compare-mango-titles)
+  - [Check for duplicates](#Check-for-duplicates)
   - [Find volume numbers](#Find-volume-numbers)
   - [Check for already uploaded chapters](#Check-for-already-uploaded-chapters)
   - [Log chapters](#Log-chapters)
@@ -75,6 +76,13 @@ This is essentially a double checking operation after matching titles. It displa
 
 #### Settings used:
 - `languages` *(optional)*
+
+### Check for duplicates 
+
+Another double (triple?) checking operation. It looks for ids assigned to more than one key in the main folder's `name_id_map.json`, i.e. if you've matched more than one title name to an MD title entry. It also looks into mupl's map for the same thing. This operation is always executed at the end of [title matching](#Match-titles).
+
+#### Settings used:
+- `uploaderFolder` *(optional)*
 
 ### Find volume numbers
 
@@ -141,7 +149,9 @@ Another self-explanatory command. This returns the chapter count of the title ur
 
 ### Merge local json with online aggregate
 
-Same thing than [merge json maps](#Merge-json-maps) except with the online aggregate for TMO scrapers. You can now use whatever gist you want with the setting `aggregateGistId`, in case I disappear or you hate my guts.
+Same thing than [merge json maps](#Merge-json-maps) except with the online aggregate for TMO scrapers. **The online aggregate takes priority over existing values.** 
+
+You can now use whatever gist you want with the setting `aggregateGistId`, in case I disappear or if you hate my guts.
 
 #### Settings used:
 - `uploaderFolder`
