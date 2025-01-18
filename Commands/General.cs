@@ -286,6 +286,7 @@ namespace MDUploadHelper
                         string newChapterFolder = currentChapterFolder.Contains("(v)") ? currentChapterFolder.Replace("(v)", $"(v{foundChapter})")
                                                 : $"{currentChapterFolder.Substring(0, chapGroupPosition + 1)}(v{foundChapter}){currentChapterFolder[chapGroupPosition..]}";
                         Directory.Move(Path.Combine(mainFolder, currentMangoFolder, currentChapterFolder), Path.Combine(mainFolder, currentMangoFolder, newChapterFolder));
+                        Log.Verbose("Volume numbered {0} into {1}.", currentChapterFolder, newChapterFolder);
                         volumeNumbersFound++;
                     }
                 }
@@ -371,6 +372,7 @@ namespace MDUploadHelper
                     {
                         Directory.CreateDirectory(Path.Combine(movedChaptersFolder, currentMangoFolder));
                         Directory.Move(Path.Combine(mainFolder, currentMangoFolder, currentChapterFolder), Path.Combine(movedChaptersFolder, currentMangoFolder, currentChapterFolder));
+                        Log.Verbose("Moved {0}", currentChapterFolder);
                         movedChapters++;
                     }
                 }
