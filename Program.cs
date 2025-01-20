@@ -364,7 +364,7 @@ namespace MDUploadHelper
 
         static List<string> CheckForGaps(List<string> chapterNumbersList)
         {
-            var parsedList = chapterNumbersList.Select(val => Math.Floor(decimal.Parse(val, CultureInfo.InvariantCulture))).ToList();
+            var parsedList = chapterNumbersList.Where(val => val != "none").Select(val => Math.Floor(decimal.Parse(val, CultureInfo.InvariantCulture))).ToList();
             List<string> gapList = new();
 
             if (parsedList.Count > 0 && parsedList[0] > 1)
