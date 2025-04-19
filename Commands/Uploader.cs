@@ -26,6 +26,8 @@ namespace MDUploadHelper
 
             if (!LoadAndCheckMap() || !settings.CheckUploader()) { PressKeyContinue(); return; }
 
+            Directory.CreateDirectory(Path.Combine(settings.UploaderFolder, "to_upload"));
+
             foreach (var currentMangoFolder in mangosFolders)
             {
                 var chaptersFolders = Directory.GetDirectories(Path.Combine(mainFolder, currentMangoFolder)).Select(d => new DirectoryInfo(d).Name);
