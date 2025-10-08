@@ -88,11 +88,19 @@ namespace MDUploadHelper
 
                 foreach (string language in settings.Languages)
                 {
-                    var aggregate = await api.Manga.Aggregate(id, [language]);
+                    var aggregate = await api.Manga.Aggregate(id, [language], includeUnavailable:true);
                     await Task.Delay(300);
-                    var chapters = aggregate.Volumes.SelectMany(volume => volume.Value.Chapters.Values.Select(chap => chap.Chapter)).Reverse().ToList();
-                    Log.Information("- {0}: {1} chapters.", language.ToUpper(), chapters.Count);
-                    var gaps = CheckForGaps(chapters);
+                    var chapters = aggregate.Volumes.SelectMany(volume => volume.Value.Chapters.Values);
+                    int unavailableChaptersCount = chapters.Where(chapData => chapData.IsUnavailable).Count();
+                    var chaptersNumbersList = chapters.Where(chapData => !chapData.IsUnavailable).Select(chap => chap.Chapter).Reverse().Distinct().ToList();
+                    Log.Information("- {0}: {1} available chapters.", language.ToUpper(), chaptersNumbersList.Count);
+
+                    if (unavailableChaptersCount > 0)
+                    {
+                        Log.Warning("{0} unavailable chapters.", unavailableChaptersCount);
+                    }
+
+                    var gaps = CheckForGaps(chaptersNumbersList);
 
                     if (gaps.Count > 0)
                     {
@@ -103,7 +111,8 @@ namespace MDUploadHelper
                             Log.Information(gap);
                         }
                     }
-                    jsonLog[id].Add(language, new(chapters.Count, gaps.ToArray()));
+
+                    jsonLog[id].Add(language, new(chaptersNumbersList.Count, unavailableChaptersCount, gaps.ToArray()));
                 }
 
                 Console.WriteLine();

@@ -9,7 +9,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="iluvadev.ConsoleProgressBar" Version="1.1.0" />
-		<PackageReference Include="MangaDexSharp" Version="1.1.4" />
+		<PackageReference Include="MangaDexSharp" Version="1.3.5" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
 		<PackageReference Include="Pastel" Version="6.0.1" />

@@ -61,6 +61,6 @@ namespace MDUploadHelper
         }
     }
 
-    public record TitleChapterCount([property: JsonPropertyName("count")] int Count, [property: JsonPropertyName("gaps")] string[] Gaps);
+    public record TitleChapterCount([property: JsonPropertyName("count")] int Count, [property: JsonPropertyName("unavailable")] int Unavailable, [property: JsonPropertyName("gaps")] string[] Gaps);
 
 }
